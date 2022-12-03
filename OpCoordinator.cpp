@@ -6,43 +6,56 @@
 #include "Value.h"
 #include "Operation.h"
 
-Transaction OpCoordinator::startTransaction() {
-    return Transaction(updateVersion());
-}
+namespace mvcc {
 
-BulkWrite OpCoordinator::startBulkWriteOperation(){
-    return BulkWrite(updateVersion());
-}
+    op::Transaction OpCoordinator::startTransaction() {
+        return op::Transaction(updateVersion());
+    }
 
-ReadOperation OpCoordinator::startReadOperation(Value *node) {
+    op::BulkWriteOperation OpCoordinator::startBulkWriteOperation() {
+        return op::BulkWriteOperation(updateVersion());
+    }
 
-    return ReadOperation(node,*version_);
-}
+    op::ReadOperation OpCoordinator::startReadOperation(Value *node) {
 
-StreamReadOperation OpCoordinator::startStreamReadOperation(Value *node) {
-    return StreamReadOperation(node,*version_);
-}
+        return op::ReadOperation(node, *version_);
+    }
 
-WriteOperation OpCoordinator::startWriteOperation(Value *node,const std::string &value) {
+    op::StreamReadOperation OpCoordinator::startStreamReadOperation(Value *node) {
+        return op::StreamReadOperation(node, *version_);
+    }
 
-    return WriteOperation(node,value,updateVersion());
-}
+    op::WriteOperation OpCoordinator::startWriteOperation(Value *node, const std::string &value) {
 
-DeleteOperation OpCoordinator::startDeleteOperation(Value *node) {
+        return op::WriteOperation(node, value, updateVersion());
+    }
 
-    return DeleteOperation(node,updateVersion());
-}
+    op::DeleteOperation OpCoordinator::startDeleteOperation(Value *node) {
+
+        return op::DeleteOperation(node, updateVersion());
+    }
 
 
-Version OpCoordinator::updateVersion() {
-    auto version = sequence_.fetch_add(1) + 1;
-    versions_.emplace_back(version);
-    auto v = new Version(version);
-    std::swap(v,version_);
-    delete v;
-    return *version_;
-}
+    Version OpCoordinator::updateVersion() {
+        long version = sequence_.fetch_add(1) + 1;
 
-bool OpCoordinator::isTransaction(long version) {
-    return false;
+        mtx->mtx.lock();
+        versions_.emplace(version);
+        mtx->mtx.unlock();
+
+        auto v = new Version(version);
+
+        auto ex = version_.load();
+        while( !version_.compare_exchange_weak(ex,v)){
+            ex = version_.load();
+        }
+
+        delete ex;
+
+        return *version_;
+    }
+
+    bool OpCoordinator::isTransaction(long version) {
+        return false;
+    }
 }

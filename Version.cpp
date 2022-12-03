@@ -5,38 +5,39 @@
 #include "Version.h"
 #include "Value.h"
 #include "OpCoordinator.h"
+namespace mvcc {
+    Version::~Version() {
 
-Version::~Version() {
+        if (running_default) {
+            for (auto &op: operations_) {
+                if (op != nullptr)
+                    op->undo();
+            }
+        }
 
-    if (running_default) {
-        for (auto &op: operations_) {
-            if (op != nullptr)
-                op->undo();
+        if (use_count_->fetch_sub(1) == 1) {
+            Coordinator.versionReleaseNotify(version_);
         }
     }
 
-    if(use_count_->fetch_sub(1) == 1){
-        Coordinator.versionReleaseNotify(version_);
+    void Version::undo() {
+        if (refer_)
+            return;
+
+        running_default = false;
+        for (auto &op: operations_) {
+            op->undo();
+        }
     }
-}
 
-void Version::undo() {
-    if (refer_)
-        return ;
+    bool Version::commit() {
+        if (refer_)
+            return false;
 
-    running_default = false;
-    for (auto &op: operations_) {
-        op->undo();
+        running_default = false;
+        for (auto &op: operations_) {
+            op->commit();
+        }
+        return true;
     }
-}
-
-bool Version::commit() {
-    if (refer_)
-        return false;
-
-    running_default = false;
-    for (auto &op: operations_) {
-        op->commit();
-    }
-    return true;
 }

@@ -5,25 +5,30 @@
 #include "Value.h"
 #include "OpCoordinator.h"
 
-bool ValueNode::commit() {
+namespace mvcc{
 
-    if (status_ != ValueNode::Uncommitted)
-        return false;
+    bool ValueNode::commit() {
 
-    // 得到当前活跃的最低版本号
-    long lowest_version = Coordinator.getLowestVersion();
+        if (status_ != ValueNode::Uncommitted)
+            return false;
 
-    auto prev = prev_.load();
+        // 得到当前活跃的最低版本号
+        long lowest_version = Coordinator.getLowestVersion();
 
-    // 只有最旧的事务可以进行移出
-    while (prev != nullptr && prev->version_ < lowest_version && prev->status_ != ValueNode::Uncommitted) {
-        prev_.store(nullptr);
-        auto nxt = prev->prev_.load();
-        delete prev;
-        prev = nxt;
+        auto prev = prev_.load();
+
+        // 只有最旧的事务可以进行移出
+        while (prev != nullptr && prev->version_ < lowest_version && prev->status_ != ValueNode::Uncommitted) {
+            prev_.store(nullptr);
+            auto nxt = prev->prev_.load();
+            delete prev;
+            prev = nxt;
+        }
+
+        status_ = value_.empty() ? ValueNode::Deleted : ValueNode::Committed;
+
+        return true;
     }
-
-    status_ = value_.empty() ? ValueNode::Deleted : ValueNode::Committed;
-
-    return true;
 }
+
+

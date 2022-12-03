@@ -3,6 +3,8 @@ project(mvcc)
 
 set(CMAKE_CXX_STANDARD 17)
 
+set(CMAKE_BUILD_TYPE Release)
+
 include_directories(/usr/local/include)
 link_directories(/usr/local/lib)
 
@@ -12,10 +14,10 @@ set(MVCC_SRCS OpCoordinator.cpp OpCoordinator.h
         ValueTable.cpp ValueTable.h
         Version.cpp Version.h
         SkipList.h SkipList.cpp
-        GossipSlot.cpp GossipSlot.h)
+        )
 
 add_executable(mvcc main.cpp
-        ${MVCC_SRCS})
+        ${MVCC_SRCS} )
 
 option(BUILD_TEST "BUILD TEST OPTION" ON)
 
