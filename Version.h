@@ -25,14 +25,11 @@ namespace mvcc {
         /// Construct a typical version with given version.
         /// \param version Given version sequence
         /// \param refer Is version a refer
-        explicit Version(long version, bool refer = false) : version_(version), use_count_(new std::atomic<int>(1)),
-                                                             refer_(refer) {}
+        explicit Version(long version, bool refer = false);
 
         /// Copy constructor. The operation will increase use_count.
         /// \param other Source object
-        Version(const Version &other) : version_(other.version_), use_count_(other.use_count_), refer_(other.refer_) {
-            use_count_->fetch_add(1);
-        }
+        Version(const Version &other);
 
         /// Every destruction will decrease use_count. If use count is zero, function will call OpCoordinator::versionReleaseNotify
         ~Version();
@@ -40,24 +37,11 @@ namespace mvcc {
         /// Compares the version id of two Version impl to be equal.
         /// \param other Another Version impl
         /// \return Result of comparison
-        Version &operator=(const Version &other) {
-
-            if (this == &other) {
-                return *this;
-            }
-
-            version_ = other.version_;
-            use_count_ = other.use_count_;
-            operations_ = {};
-            use_count_->fetch_add(1);
-            return *this;
-        }
+        Version &operator=(const Version &other);
 
         /// Get the version sequence.
         /// \return Version value
-        [[nodiscard]] long version() const {
-            return version_;
-        }
+        [[nodiscard]] long version() const;
 
         /// Commit all operations of this Object impl.
         /// \return Is committed
@@ -68,21 +52,21 @@ namespace mvcc {
 
         /// Record an operation in this object. This function is used to collect all operations and delayed commit together
         /// \param operated Operation to record
-        void recordOperation(ValueNode *operated) {
-            operations_.emplace_back(operated);
-        }
+        void recordOperation(ValueNode *operated);
 
         /// Get use count of this impl.
         /// \return Use count
-        [[nodiscard]] int count() const {
-            return use_count_->load();
-        }
+        [[nodiscard]] int count() const;
+
+        /// Atomic update warp version.
+        /// \param n Self adding quantity
+        void versionUpdate(int n);
 
     private:
 
-        long version_ = 0;
+        std::atomic<long> version_ = 0;            // 事务号
 
-        std::atomic<int> *use_count_ = nullptr;   //
+        std::atomic<int> *use_count_ = nullptr;   // 引用计数，用于事务视图控制
 
         bool refer_ = false;
         bool running_default = true;    // 如果用户没有commit或undo，析构的时候会自动 undo

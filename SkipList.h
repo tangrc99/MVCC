@@ -26,20 +26,22 @@ namespace mvcc {
         class SkipListNode {
         public:
 
+            friend class SkipList;
+
             /// Default Constructor. If type V has default constructor, user can construct a node and given its value later.
             /// \param key The key of this node
             /// \param level The level of this node
-            explicit SkipListNode(std::string key, int level)
-                    : key_(std::move(key)), backward(level) {
+            explicit SkipListNode(std::string key, int level): key_(std::move(key)), backward(level) {
             }
 
             /// If type V is copyable, construct a node with given value
             /// \param key The key of this node
             /// \param value The given value
             /// \param level The level of this node
-            explicit SkipListNode(std::string key, V value, int level)
-                    : key_(std::move(key)), value_(value), backward(level) {
+            explicit SkipListNode(std::string key, V value, int level)  : key_(std::move(key)), value_(value), backward(level) {
             }
+
+            ~SkipListNode() = default;
 
             /// Set next node of given level. This function will compare and swap, so it's thread safe. If old node is not
             /// the same as expected, function will return false and do nothing.
@@ -47,26 +49,28 @@ namespace mvcc {
             /// \param old_node Expected old node
             /// \param level
             /// \return Is operation succeeded
-            bool setNextNode(SkipListNode *new_node, SkipListNode *old_node, int level) {
+            bool setNextNode(SkipListNode *new_node, SkipListNode *old_node, int level){
                 return backward[level - 1].compare_exchange_weak(old_node, new_node);
             }
+
 
             /// Get next node of given level. This function is thread safe. If given level is larger than this node's
             /// max level, function will return nullptr.
             /// \param level Expected level
             /// \return Next node on given level
-            SkipListNode *getNextNode(int level) {
+            /// @note level starts at 1 rather than 0
+            SkipListNode *getNextNode(int level){
                 return level > backward.size() ? nullptr : backward[level - 1].load();
             }
 
             /// Get the max level of this node.
             /// \return Max level
-            [[nodiscard]] int level() const {
+            [[nodiscard]] int level()  const {
                 return static_cast<int>(backward.size());
             }
 
             /// Lazy free this node. Thread safe.
-            void markDelete() {
+            void markDelete(){
                 deleted.store(false);
             }
 
@@ -76,7 +80,7 @@ namespace mvcc {
                 return deleted.load();
             }
 
-        public:
+        private:
             using SkipListNodePtr = std::atomic<SkipListNode *>;
 
             std::string key_;
@@ -98,7 +102,7 @@ namespace mvcc {
 
             /// Constructor a iterator points to given node.
             /// \param node Node pointed to
-            explicit Iterator(SkipListNode *node) : node_(node) {
+            explicit Iterator(SkipListNode *node): node_(node) {
 
             }
 
@@ -108,12 +112,16 @@ namespace mvcc {
                 return Iterator(nullptr);
             }
 
+            /// Get reference of warp value.
+            /// \return Refer of type V
             V &operator*() const {
                 if (node_ == nullptr)
                     throw std::runtime_error("Using operator * on invalid Iterator");
                 return node_->value_;
             }
 
+            ///
+            /// \return
             Iterator &operator++() {
                 node_ = node_->getNextNode(1);
                 return *this;
@@ -132,27 +140,18 @@ namespace mvcc {
             bool operator!=(const Iterator &other) const {
                 return node_ != other.node_;
             }
-
-            friend std::ostream &operator<<(std::ostream &os, const Iterator &it) {
-                if (it.node_ == nullptr)
-                    return os;
-                os << "key:" << it.node_->key_ << ",value:" << it.node_->value_;
-                return os;
-            }
-
             /// Check validity. If iterator points to nullptr or a lazy freed node, it is invalid.
             /// \return Is iterator valid
             explicit operator bool() const {
                 return node_ != nullptr && !node_->isDeleted();
             }
 
-            [[nodiscard]] std::string key() const {
+            [[nodiscard]] std::string key()const {
                 if (node_ == nullptr)
                     throw std::runtime_error("Request key on invalid Iterator");
 
                 return node_->key_;
             }
-
         private:
             SkipListNode *node_;
         };
@@ -161,17 +160,18 @@ namespace mvcc {
 
         /// Construct an empty SkipList with given max level.
         /// \param max_level Max level of SkipList, default 7
-        explicit SkipList(int max_level = 7) : root_(new SkipListNode("", max_level)), MAX_L(max_level) {
+        explicit SkipList(int max_level = 7)  : root_(new SkipListNode("", max_level)), MAX_L(max_level) {
             std::random_device rd;
             e = std::default_random_engine(rd());
             root_->markDelete();
         }
 
         /// Release all nodes, not thread safe.
-        ~SkipList() {
+        ~SkipList(){
             auto cur = root_;
             while (cur != nullptr) {
-                auto nxt = root_->getNextNode(1);
+                auto nxt = cur->getNextNode(1);
+
                 delete cur;
                 cur = nxt;
             }
@@ -181,6 +181,7 @@ namespace mvcc {
         /// Otherwise, a new node will be construct and return.
         /// \param key The key of node.
         /// \return Iterator of node with given key
+        /// @note Thread safe
         Iterator insert(const std::string &key) {
 
             int level = randomLevel();
@@ -232,6 +233,7 @@ namespace mvcc {
         /// \param key The key of node
         /// \param value The value of node
         /// \return Iterator of node with given key
+        /// @note Thread safe
         Iterator insert(const std::string &key, const V &value) {
 
             int level = randomLevel();
@@ -282,6 +284,7 @@ namespace mvcc {
         /// \param key The key of node
         /// \param value The value of node
         /// \return Iterator of node with given key
+        /// @note Thread safe
         Iterator insertIfNotExist(const std::string &key, const V &value) {
             int level = randomLevel();
 
@@ -326,9 +329,10 @@ namespace mvcc {
             return Iterator(node);
         }
 
-        /// Find node with given key and return it's iterator. If not found, returns iterator end. Thread safe.
+        /// Find node with given key and return it's iterator. If not found, returns iterator end.
         /// \param key The key of node
         /// \return Iterator of found node
+        /// @note Thread safe
         Iterator find(const std::string &key) {
 
             int i = MAX_L;
@@ -356,10 +360,11 @@ namespace mvcc {
         }
 
         /// Find nodes whose key between min and max, [min,max]. Function returns the startup iterator and concluding iterator。
-        /// User must check validity of iterator when traversing. Thread safe.
+        /// User must check validity of iterator when traversing.
         /// \param min The lower bound of key, default MIN
         /// \param max The upper bound of key, default MAX
         /// \return The begin and end.
+        /// @note Thread safe
         std::pair<Iterator, Iterator> findBetween(const std::string &min = "", const std::string &max = "") {
             Iterator start(nullptr), end(nullptr);
 
@@ -394,6 +399,7 @@ namespace mvcc {
         /// \param key The key of node
         /// \param value Expected new value of node
         /// \return Is operation succeeded.
+        /// @note Thread safe
         bool update(const std::string &key, const V &value) {
             auto node = find(key);
             if (node == Iterator::end())
@@ -405,6 +411,7 @@ namespace mvcc {
         /// Lazy free a node with given iterator. Thread Safe. If not found, function will return false.
         /// \param iterator Node to lazy free
         /// \return Is operation succeeded
+        /// @note Thread safe
         bool erase(const Iterator &iterator) {
             auto node = iterator.node_;
             if (node == nullptr) {
@@ -418,29 +425,22 @@ namespace mvcc {
         /// Lazy free a node with given key. Thread Safe. If not found, function will return false.
         /// \param key Node to lazy free
         /// \return Is operation succeeded
+        /// @note Thread safe
         bool erase(const std::string &key) {
             return erase(find(key));
         }
 
-        /// Free all nodes in SkipList. Not thread safe.
-        void clear() {
-            auto cur = new SkipListNode("", MAX_L);
-            std::swap(cur, root_);
-            while (cur != nullptr) {
-                auto nxt = root_->getNextNode(1);
-                delete cur;
-                cur = nxt;
-            }
-        }
 
         /// Get num of nodes in SkipList.
         /// \return num
+        /// @note Thread safe
         size_t size() const {
             return size_.load();
         }
 
         /// Get the iterator of first element in SkipList.
         /// \return The iterator of first node
+        /// @note Thread safe
         Iterator begin() const {
             return Iterator(root_->getNextNode(1));
         }
@@ -452,15 +452,16 @@ namespace mvcc {
         }
 
         /// Get the reference of node's value with given key. If node not exists, a new node will be constructed.
-        /// Thread safe.
         /// \param key The key of node
         /// \return The reference of value
+        /// @note Thread safe
         V &operator[](const std::string &key) {
             return *insert(key);
         }
 
         /// Get a view from other SkipList. Internal data will be shared but not copied. Thread Safe.
         /// \param other Other SkipList
+        /// @warning Advised to be used when read-only
         void getViewFrom(const SkipList<V> &other) {
             clear();
             root_ = other.root_;
@@ -468,6 +469,70 @@ namespace mvcc {
             size_.store(other.size_.load());
         }
 
+        /// Free all nodes in SkipList.
+        /// @warning Not thread safe.
+        void clear() {
+            auto new_root = new SkipListNode("", MAX_L);
+            auto cur = root_->getNextNode(1);
+            std::swap(root_,new_root);
+
+            delete new_root;
+
+            while (cur != nullptr) {
+                auto nxt = cur->getNextNode(1);
+                delete cur;
+                cur = nxt;
+            }
+            size_.store(0); // 大小重置
+        }
+
+        /// Compact this SkipList and release all deleted nodes. This function is not thread safe.
+        /// @warning Not Thread Safe.
+        void compact(){
+
+            // 需要遍历每一个层级
+            for(int level = MAX_L; level > 0;level--){
+
+                auto slow = root_;
+                auto fast = root_->getNextNode(level);
+
+                while (fast != nullptr) {
+
+                    if(fast->isDeleted()){
+                        auto nxt = fast->getNextNode(level);
+                        slow->setNextNode(nxt,fast,level);  // new,old,level
+
+                        if(level == 1)
+                            delete fast;    // 防止重复删除
+                        fast = nxt;
+                        continue;
+                    }
+
+                    auto nxt = fast->getNextNode(level);
+                    slow = fast;
+                    fast = nxt;
+                }
+
+            }
+
+        }
+
+        /// Merge this SkipList and other one. It will use copy rather than view. Make sure that other SkipList will not
+        /// be revised. Otherwise, it is unsure that all values are copied.
+        /// \param other Other SkipList
+        /// @note Thread Safe
+        /// @warning Make sure no revise in other SkipList.
+        void merge(SkipList<V> &other){
+
+            auto cur = other.root_->getNextNode(1);
+
+            while (cur != nullptr) {
+                auto nxt = cur->getNextNode(1);
+                this->insert(cur->key_,cur->value_);
+                cur = nxt;
+            }
+
+        }
 
         /// Analyze the node nums of each level. This function is only used for test.
         /// \return Vector of node nums of each level.
@@ -541,6 +606,8 @@ namespace mvcc {
         int MAX_L;
         std::atomic<size_t> size_ = 0;
     };
+
+
 
 
 }

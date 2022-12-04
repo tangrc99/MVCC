@@ -10,6 +10,7 @@
 #include "Operation.h"
 #include "SkipList.h"
 #include <unordered_map>
+#include <thread>
 
 
 namespace mvcc {
@@ -68,9 +69,39 @@ namespace mvcc {
 
     public:
 
+        /// Describes garbage cleanup level
+        enum CleanThreshold {
+            /// Cleanup starts at 50%
+            high,
+            /// Cleanup starts at 30%
+            medium,
+            /// Cleanup starts at 15%
+            low,
+            /// Cleanup never starts
+            never
+        };
+
+
         /// Constructs a ValueTable impl using given skip list level.
         /// \param max_level skip list's max level
-        explicit ValueTable(int max_level = 18) : skipList_(max_level){};
+        /// \param threshold Garbage cleanup threshold. If it is set to 1, no cleanup is performed
+        explicit ValueTable(int max_level = 18, CleanThreshold threshold = never) : skipList_(max_level),
+                                                                                    buffer_(max_level),
+                                                                                    deleted_nums(0),
+                                                                                    threshold_(threshold),
+                                                                                    status_(0) {
+            if (threshold == high) {
+                percent = 0.5;
+            } else if (threshold == medium) {
+                percent = 0.3;
+            } else if (threshold == low) {
+                percent = 0.15;
+            } else {
+                percent = 1;
+            }
+        };
+
+        ~ValueTable() = default;
 
         /// Get the begin of all values.
         /// \return Iterator of first value
@@ -98,6 +129,7 @@ namespace mvcc {
         /// \param key The key of record
         /// \return Is ok
         bool erase(const std::string &key) {
+            deleted_nums.fetch_add(1);  // 增加删除计数
             return skipList_.erase(key);
         }
 
@@ -129,10 +161,16 @@ namespace mvcc {
         /// Find a record with given key and get it's iterator. This function is used to traverse table.
         /// \param key The key of record
         /// \return Iterator of record.
-        Iterator find(const std::string &key){
+        Iterator find(const std::string &key) {
             auto pos = skipList_.find(key);
-            if(pos == skipList_.end())
-                return end();
+            if (pos == skipList_.end()){
+                if (status_.load() == 0)
+                    return end();
+                pos = buffer_.find(key);
+                if (pos == buffer_.end()) {
+                    return end();
+                }
+            }
             return Iterator(pos);
         }
 
@@ -150,27 +188,32 @@ namespace mvcc {
         }
 
 
-        void compact(){
-
-            // 将现有的复制到只读表
-            std::swap(skipList_,snapshot_);
-
-
-            // 将只读表中已经删除的节点删除
-
-
-
-
-        }
-
+        /// Force start compact process. Make sure that no operation is now on this table. A daemon thread will be start
+        /// to do compact task.
+        /// @note Costly action.
+        void compact();
 
 
     private:
-        SkipList<Value> skipList_;
+        void clearBuffer();
 
-        SkipList<Value> snapshot_;
+        void tryCompact();
 
-        std::atomic<size_t> mem_use_ = 0;
+    private:
+
+        std::atomic<int> status_;   // 1 : compact,写缓冲区 2 : clean,写主表
+
+        SkipList<Value> skipList_;  //  内存表区域
+        SkipList<Value> buffer_;    // 备用插入缓冲区
+
+        std::atomic<size_t> mem_use_ = 0;   // 内存占用估算
+
+        CleanThreshold threshold_;  // 清理阈值
+        double percent; // 具体百分比
+
+        std::atomic<size_t> deleted_nums; // 删除操作的个数
+
+        std::thread th_;
     };
 }
 #endif //ALGYOLO_VALUETABLE_H

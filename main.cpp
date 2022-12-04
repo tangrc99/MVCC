@@ -105,7 +105,33 @@ void ops() {
 }
 
 
+int garbageCleanTest(){
+    ValueTable table(3);
+
+    table.emplace("1","1");
+    table.emplace("2","2");
+
+    table.erase("2");
+
+    table.compact();
+
+    //table.emplace("3","1");
+
+
+    //std::cout << table.size();
+
+
+    this_thread::sleep_for(std::chrono::seconds(2));
+
+
+    return 0;
+}
+
+
 int main() {
+
+
+    return garbageCleanTest();
 
     std::vector<std::string> keys(100000);
     for (int i = 0; i < 100000; i++) {
@@ -133,9 +159,9 @@ int main() {
         //   mtx.lock();
 
         // map.emplace(keys[i],new Value("1",0));
-        skipList.insert(keys[i]);
+      //  skipList.insert(keys[i]);
         // mtx.unlock();
-        //  table.emplace(keys[i],"1");
+          table.emplace(keys[i],"1");
     }
 
     auto end = std::chrono::system_clock::now();

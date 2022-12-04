@@ -7,9 +7,7 @@
 
 
 #include <atomic>
-#include <list>
 #include <mutex>
-#include <utility>
 
 
 namespace mvcc {
@@ -34,7 +32,14 @@ namespace mvcc {
 
         /// The status of value
         enum Status {
-            Committed, Deleted, Uncommitted, Undo
+            /// Operation is committed.
+            Committed,
+            /// Value is deleted.
+            Deleted,
+            /// Operation is uncommitted.
+            Uncommitted,
+            /// Operation rollback.
+            Undo
         };
 
         /// Constructor of ValueNode.
@@ -44,9 +49,9 @@ namespace mvcc {
         /// \param nxt The next node of this node
         /// \param status The status of this node
         explicit ValueNode(std::string value, long version, ValueNode *prev = nullptr, ValueNode *nxt = nullptr,
-                           Status status = Uncommitted) : value_(
-                std::move(value)), prev_(prev), nxt_(nxt), version_(version), status_(status) {
-        }
+                           Status status = Uncommitted);
+
+        ~ValueNode() = default;
 
         /// Commit the value revision. Thread safe.
         /// \return Is operation OK
@@ -54,10 +59,7 @@ namespace mvcc {
 
         /// Discard the value revision and undo. Thread safe.
         /// \return Is operation OK
-        bool undo() {
-            status_ = ValueNode::Undo;
-            return true;
-        }
+        bool undo();
 
     private:
 
@@ -79,13 +81,25 @@ namespace mvcc {
         /// Default Construction. Construct an empty value.
         Value() = default;
 
+        /// Destruction to release all ValueNode in this row.
+        ~Value();
+
         /// Construct a Value impl with assigned value and latest version.
         /// \param value Latest value
         /// \param version Latest version
-        explicit Value(const std::string &value, long version)
-                : latest(new ValueNode(value, version, nullptr, nullptr, ValueNode::Committed)) {
-            mem_use_.fetch_add(value.size() + sizeof(long) + sizeof(ValueNode::status_));
-        }
+        explicit Value(const std::string &value, long version);
+
+        /// Copy Constructor. Only copy latest value of other impl.
+        /// \param other Other Value impl
+        /// @warning This succeeds only if all operations on the value are committed, otherwise an exception will be thrown.
+        /// @throw std::runtime_error("Copy a value with status uncommitted")
+        Value(const Value &other);
+
+        /// Copy Operator. Only copy latest value of other impl.
+        /// \param other Other Value impl
+        /// @warning This succeeds only if all operations on the value are committed, otherwise an exception will be thrown.
+        /// @throw std::runtime_error("Copy a value with status uncommitted")
+        Value &operator=(const Value &other);
 
 
         /// Write operation. Decorated interface of updateValue.
@@ -95,90 +109,32 @@ namespace mvcc {
         /// \param version Operation version
         /// \param wait_ms Max wait time
         /// \return Ptr of operated ValueNode.
-        ValueNode *write(const std::string &value, long version, int wait_ms = 50) {
-
-            std::unique_lock<std::timed_mutex> lg(mtx, std::defer_lock);
-            auto locked = lg.try_lock_for(std::chrono::milliseconds(wait_ms));
-
-            if (!locked) {
-                return {};
-            }
-
-            auto node = new ValueNode(value, version, latest, nullptr);
-
-            latest.exchange(node);
-            return node;
-        }
+        ValueNode *write(const std::string &value, long version, int wait_ms = 50);
 
         /// Lazy free this node. This operation will insert a ValueNode with empty value.Operation will wait for given time
         /// to get mutex, if failed, function will return nullptr.
         /// \param version Operation version
         /// \param wait_ms Max wait time
         /// \return Ptr of operated ValueNode.
-        ValueNode *remove(long version, int wait_ms = 50) {
-            return write("", version, wait_ms);
-        }
+        ValueNode *remove(long version, int wait_ms = 50);
 
         /// Read operation. Get the value older than given version(default) or get latest version.
         /// \param version Operation version
         /// \param read_latest Read type
         /// \return Read value
-        std::string read(long version, bool read_latest = false) {
-
-            auto node = latest.load();
-
-            if (read_latest) {
-                // 当前读
-                while (node != nullptr) {
-
-                    if (node->status_ == ValueNode::Committed)
-                        return node->value_;
-
-                    if (node->status_ == ValueNode::Deleted)
-                        return {};
-
-                    node = node->prev_.load();
-                }
-
-            } else {
-                // 快照读
-                while (node != nullptr) {
-
-                    if (node->status_ == ValueNode::Committed && node->version_ <= version)
-                        return node->value_;
-
-                    if (node->status_ == ValueNode::Deleted)
-                        return {};
-
-                    node = node->prev_.load();
-                }
-            }
-
-            return {};
-        }
+        std::string read(long version, bool read_latest = false);
 
         /// Lock this value. Only used in transaction operations.Operation will wait for given time to get mutex.
         /// \param wait_ms Max wait time
         /// \return Is operation succeeded
-        bool getLock(int wait_ms = 50) {
-            auto locked = mtx.try_lock_for(std::chrono::milliseconds(wait_ms));
-            if (!locked)
-                return false;
-            in_transaction = true;
-            return in_transaction;
-        }
+        bool getLock(int wait_ms = 50);
 
         /// Release the lock.
-        void unlock() {
-            if (in_transaction)
-                mtx.unlock();
-        }
+        void unlock();
 
         /// Get approximately memory use of this node.
         /// \return Memory use
-        size_t memoryUse() const {
-            return mem_use_.load();
-        }
+        size_t memoryUse() const;
 
     private:
 
@@ -188,17 +144,7 @@ namespace mvcc {
         /// \param value Value to write
         /// \param version Operation version
         /// \return Ptr of operated ValueNode.
-        ValueNode *updateValue(const std::string &value, long version) {
-
-            // 这里要检查有没有被锁
-            mtx.try_lock();
-
-            auto node = new ValueNode(value, version, latest, nullptr);
-
-            latest.exchange(node);
-
-            return node;
-        }
+        ValueNode *updateValue(const std::string &value, long version);
 
     private:
         std::timed_mutex mtx;
@@ -207,6 +153,7 @@ namespace mvcc {
 
         bool in_transaction = false;    // 用于区分节点是被单个写操作锁住，还是事务锁住
     };
+
 
 
     /// @brief To expose some private functions of Value.

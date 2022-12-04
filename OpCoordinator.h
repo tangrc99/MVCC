@@ -37,10 +37,7 @@ namespace mvcc {
 
         /// Singleton call of OpCoordinator.
         /// \return Singleton impl
-        static OpCoordinator &getInstance() {
-            static OpCoordinator coordinator;
-            return coordinator;
-        }
+        static OpCoordinator &getInstance();
 
         /// Start a transaction operation. Max version of this impl will update.
         /// \return Transaction impl
@@ -71,37 +68,23 @@ namespace mvcc {
         /// \return DeleteOperation impl
         op::DeleteOperation startDeleteOperation(Value *node);
 
+
+        /// Get newest alive version. Used by ValueTable to do compact check.
+        /// \return Newest alive version
+         long getNewestVersion();
+
+
         /// Get lowest alive version. Used by ValueNode to release out of date value record.
         /// \return Lowest alive version
-        inline long getLowestVersion() {
-
-            if (versions_.empty())
-                return sequence_.load();
-
-            std::lock_guard<std::mutex> lg(mtx->mtx);
-            return *versions_.begin();
-        }
+         long getLowestVersion();
 
         /// Callback used by Version. Release version record in this impl.
         /// \param version Version to release
-        void versionReleaseNotify(long version) {
-
-            std::lock_guard<std::mutex> lg(mtx->mtx);
-            versions_.erase(version);
-        }
+        void versionReleaseNotify(long version);
 
         /// Get current alive version num.
         /// \return Alive version num
-        size_t aliveOperationNum() {
-            if (version_ == nullptr)
-                return 0;
-
-            if (versions_.size() == 1) {  // 如果只有一个版本存活，他还可能会被协调者持有
-                return version_.load()->count() - 1;
-            }
-
-            return versions_.size();
-        }
+        size_t aliveOperationNum();
 
         /// Not Used.
         /// \param version
@@ -116,26 +99,16 @@ namespace mvcc {
         Version updateVersion();
 
         /// Default Constructor. Used to impl singleton.
-        OpCoordinator() : version_(new Version(0)),mtx(new VersionMutex) {}
+        OpCoordinator();
 
         /// Copy constructor.
         /// \param other Other impl
-        OpCoordinator(const OpCoordinator &other) : sequence_(other.sequence_.load()), version_(other.version_.load()),
-                                                    versions_(other.versions_),mtx(other.mtx) {
-        }
+        OpCoordinator(const OpCoordinator &other);
 
         /// Copy Operator. Used to impl singleton.
         /// \param other Other OpCoordinator impl
         /// \return Copied impl
-        OpCoordinator &operator=(const OpCoordinator &other) {
-            if (this == &other) {
-                return *this;
-            }
-            sequence_ = other.sequence_.load();
-            version_ = other.version_.load();
-            versions_ = other.versions_;
-            return *this;
-        }
+        OpCoordinator &operator=(const OpCoordinator &other);
 
     private:
 
@@ -146,7 +119,7 @@ namespace mvcc {
         VersionMutex* mtx;  // 锁解决并发分配事务号
         std::set<long> versions_;  // 当前存活的 version
         std::atomic<long> sequence_ = 0;
-        std::atomic<Version *> version_;
+        Version * version_;
     };
 }
 #define Coordinator OpCoordinator::getInstance()

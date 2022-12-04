@@ -29,7 +29,7 @@ endif()
 if(BUILD_TEST)
     add_executable(mvcc_test
             test/test.cpp ${MVCC_SRCS}
-            )
+            test/speed_test.cpp)
     target_link_libraries(mvcc_test gtest gtest_main)
     add_test(NAME MVCC_TEST COMMAND mvcc_test)
 endif()
