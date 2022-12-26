@@ -6,6 +6,30 @@
 
 namespace mvcc {
 
+    ValueTable::ValueTable(int max_level, ValueTable::CleanThreshold threshold) : skipList_(max_level),
+                                                                                  buffer_(max_level),
+                                                                                  deleted_nums(0),
+                                                                                  threshold_(threshold),
+                                                                                  status_(0) {
+        if (threshold == high) {
+            percent = 0.5;
+        } else if (threshold == medium) {
+            percent = 0.3;
+        } else if (threshold == low) {
+            percent = 0.15;
+        } else {
+            percent = 1;
+        }
+    }
+
+    ValueTable::Iterator ValueTable::begin() {
+        return Iterator(skipList_.begin());
+    }
+
+    ValueTable::Iterator ValueTable::end() {
+        return Iterator(skipList_.end());
+    }
+
     bool ValueTable::transaction(const std::vector<std::pair<std::string, std::string>> &kvs) {
         auto transaction = Coordinator.startTransaction();
 
@@ -223,6 +247,36 @@ namespace mvcc {
         });
 
         th.join();
+    }
+
+    bool ValueTable::erase(const std::string &key) {
+        deleted_nums.fetch_add(1);  // 增加删除计数
+        return skipList_.erase(key);
+    }
+
+    bool ValueTable::exist(const std::string &key) {
+        return skipList_.find(key) != skipList_.end();
+    }
+
+    ValueTable::Iterator ValueTable::find(const std::string &key) {
+        auto pos = skipList_.find(key);
+        if (pos == skipList_.end()){
+            if (status_.load() == 0)
+                return end();
+            pos = buffer_.find(key);
+            if (pos == buffer_.end()) {
+                return end();
+            }
+        }
+        return Iterator(pos);
+    }
+
+    size_t ValueTable::size() const {
+        return skipList_.size();
+    }
+
+    size_t ValueTable::memoryUse() const {
+        return mem_use_.load();
     }
 
 

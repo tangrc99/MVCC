@@ -14,41 +14,41 @@
 using namespace mvcc;
 
 
-//TEST(SPEED_TEST,MAP_INSERT_TETS){
-//
-//
-//    size_t size = 1000000;
-//
-//    std::vector<std::string> keys(size);
-//    for (int i = 0; i < size; i++) {
-//        keys[i] = std::to_string(i);
-//    }
-//
-//    std::map<std::string,std::string> map;
-//    auto start = std::chrono::system_clock::now();
-//
-//    for (int i = 0; i < size; i++) {
-//        map.emplace( keys[i], "1");
-//    }
-//
-//    auto end = std::chrono::system_clock::now();
-//
-//    std::cout << "Map insert time ms : " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
-//              << std::endl;
-//
-//
-//    SkipList<std::string> skip_list(18);
-//    start = std::chrono::system_clock::now();
-//
-//    for (int i = 0; i < size; i++) {
-//        skip_list.insert( keys[i], "1");
-//    }
-//
-//    end = std::chrono::system_clock::now();
-//
-//    std::cout << "SkipList insert time ms : " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
-//              << std::endl;
-//}
+TEST(SPEED_TEST,INSERT_TETS){
+
+
+    size_t size = 1000000;
+
+    std::vector<std::string> keys(size);
+    for (int i = 0; i < size; i++) {
+        keys[i] = std::to_string(i);
+    }
+
+    std::map<std::string,std::string> map;
+    auto start = std::chrono::system_clock::now();
+
+    for (int i = 0; i < size; i++) {
+        map.emplace( keys[i], "1");
+    }
+
+    auto end = std::chrono::system_clock::now();
+
+    std::cout << "Map insert time ms : " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+              << std::endl;
+
+
+    SkipList<std::string> skip_list(18);
+    start = std::chrono::system_clock::now();
+
+    for (int i = 0; i < size; i++) {
+        skip_list.insert( keys[i], "1");
+    }
+
+    end = std::chrono::system_clock::now();
+
+    std::cout << "SkipList insert time ms : " << std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count()
+              << std::endl;
+}
 
 TEST(SPEED_TEST,MULTI_INSERT_TEST){
 
